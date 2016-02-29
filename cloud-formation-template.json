@@ -1,0 +1,890 @@
+{
+    
+        "Description": "elastic-ecs", 
+        "Parameters": {
+            "EnvironmentName": {
+                "Default": "Staging", 
+                "Type": "String", 
+                "Description": "EnvironmentName : Staging / Production",
+                "AllowedValues" : ["Staging", "Production"]
+            },
+            "LoadBalancerScheme" : {
+                "Default" : "internal",
+                "Type" : "String",
+                "AllowedValues" : ["internal","internet-facing"],
+                "Description" : "LoadBalancerScheme , public / private"
+            },
+            "ElbPort": {
+                "Default": "80", 
+                "Type": "String", 
+                "Description": "Optional - Security Group port to open on ELB - port 80 will be open by default"
+            }, 
+            "VpcId": {
+                "Default": "vpc-b909c5dc", 
+                "AllowedPattern": "^(?:vpc-[0-9a-f]{8}|)$", 
+                "Type": "String", 
+                "Description": "Optional - VPC Id of existing VPC. Leave blank to have a new VPC created", 
+                "ConstraintDescription": "VPC Id must begin with 'vpc-' or leave blank to have a new VPC created"
+            }, 
+            "EcsClusterName": {
+                "Default": "staging-elastic-ecs", 
+                "Type": "String", 
+                "Description": "ECS Cluster Name"
+            }, 
+            "SourceCidr": {
+                "Default": "0.0.0.0/0", 
+                "Type": "String", 
+                "Description": "Optional - CIDR/IP range for EcsPort and ElbPort - defaults to 0.0.0.0/0"
+            },
+            "AllowedIncomingCidr": {
+                "Default": "10.22.141.0/24", 
+                "Type": "String", 
+                "Description": "Optional - CIDR/IP range for EcsPort and ElbPort - defaults to 0.0.0.0/0"
+            }, 
+            "EcsAmiId": {
+                "Default" : "ami-83af8ae0",
+                "Type": "String", 
+                "Description": "ECS AMI Id"
+            }, 
+            "ELBSubnetIds": {
+                "Default": "subnet-a8dc06cd,subnet-bc4888cb", 
+                "Type": "CommaDelimitedList", 
+                "Description": "Optional - Comma separated list of existing VPC Subnet Ids where ECS instances will run"
+            }, 
+            "SubnetIds": {
+                "Default": "subnet-a1dd07c4,subnet-be4989c9", 
+                "Type": "CommaDelimitedList", 
+                "Description": "Optional - Comma separated list of existing VPC Subnet Ids where ECS instances will run"
+            },
+            "ElbHealthCheckTarget": {
+                "Default": "HTTP:9200/", 
+                "Type": "String", 
+                "Description": "Optional - Health Check Target for ELB - defaults to HTTP:80/"
+            }, 
+            "EcsEndpoint": {
+                "Default": "", 
+                "Type": "String", 
+                "Description": "Optional : ECS Endpoint for the ECS Agent to connect to"
+            }, 
+            "ElbProtocol": {
+                "Default": "HTTP", 
+                "Type": "String", 
+                "Description": "Optional - ELB Protocol - defaults to HTTP"
+            }, 
+            "AsgMaxSize": {
+                "Default": "4", 
+                "Type": "Number", 
+                "Description": "Maximum size and initial Desired Capacity of ECS Auto Scaling Group"
+            }, 
+            "KeyName": {
+                "Default": "technology", 
+                "Type": "String", 
+                "Description": "Optional - Name of an existing EC2 KeyPair to enable SSH access to the ECS instances"
+            }, 
+            "EcsPort": {
+                "Default": "9200", 
+                "Type": "String", 
+                "Description": "Optional - Security Group port to open on ECS instances - defaults to port 80"
+            }, 
+            "CreateElasticLoadBalancer": {
+                "Default": "true", 
+                "Type": "String", 
+                "Description": "Optional : When set to true, creates a ELB for ECS Service"
+            }, 
+            "EcsInstanceType": {
+                "Default": "r3.large", 
+                "ConstraintDescription": "must be a valid EC2 instance type.", 
+                "Type": "String", 
+                "AllowedValues" : [ "t2.micro", "t2.small", "t2.medium", "m3.medium", "m3.large", "m3.xlarge",
+"m3.2xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge", "c4.large", "c4.xlarge",
+"c4.2xlarge", "c4.4xlarge", "c4.8xlarge", "r3.large", "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge",
+"i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge", "d2.xlarge", "d2.2xlarge", "d2.4xlarge", "d2.8xlarge",
+"hi1.4xlarge", "hs1.8xlarge", "cr1.8xlarge", "cc2.8xlarge"],
+                "Description": "ECS EC2 instance type"
+
+            }, 
+            "IamRoleInstanceProfile": {
+                "Default": "ecsInstanceRole",
+                "Type": "String", 
+                "Description": "Name or the Amazon Resource Name (ARN) of the instance profile associated with the IAM role for the instance"
+            }, 
+            "VpcAvailabilityZones": {
+                "Default": "ap-southeast-2b,ap-southeast-2a", 
+                "Type": "CommaDelimitedList", 
+                "Description": "Optional : Comma-delimited list of two VPC availability zones in which to create subnets"
+            }
+        }, 
+        "AWSTemplateFormatVersion": "2010-09-09", 
+        "Outputs": {
+
+            "EcsElbName": {
+                "Description": "Load Balancer for ECS Service", 
+                "Value": {
+                    "Fn::If": [
+                        "CreateELB", 
+                        {
+                            "Fn::If": [
+                                "CreateELBForNewVpc", 
+                                {
+                                    "Ref": "EcsElasticLoadBalancer"
+                                }, 
+                                {
+                                    "Ref": "EcsElasticLoadBalancerExistingVpc"
+                                }
+                            ]
+                        }, 
+                        ""
+                    ]
+                }
+            }, 
+            "EcsInstanceAsgName": {
+                "Description": "Auto Scaling Group Name for ECS Instances", 
+                "Value": {
+                    "Ref": "EcsInstanceAsg"
+                }
+            },
+            "EcsSecurityGroupName": {
+                "Description": "Security Group Name for ECS Instances", 
+                "Value": {
+                    "Ref": "EcsSecurityGroup"
+                }  
+            }
+
+        }, 
+        "Conditions": {
+            "CreateELBForNewVpc": {
+                "Fn::And": [
+                    {
+                        "Fn::Equals": [
+                            {
+                                "Ref": "CreateElasticLoadBalancer"
+                            }, 
+                            "true"
+                        ]
+                    }, 
+                    {
+                        "Condition": "CreateVpcResources"
+                    }
+                ]
+            }, 
+            "CreateELB": {
+                "Fn::Or": [
+                    {
+                        "Condition": "CreateELBForExistingVpc"
+                    }, 
+                    {
+                        "Condition": "CreateELBForNewVpc"
+                    }
+                ]
+            }, 
+            "CreateELBForExistingVpc": {
+                "Fn::And": [
+                    {
+                        "Fn::Equals": [
+                            {
+                                "Ref": "CreateElasticLoadBalancer"
+                            }, 
+                            "true"
+                        ]
+                    }, 
+                    {
+                        "Condition": "ExistingVpcResources"
+                    }
+                ]
+            }, 
+            "ExistingVpcResources": {
+                "Fn::Not": [
+                    {
+                        "Fn::Equals": [
+                            {
+                                "Ref": "VpcId"
+                            }, 
+                            ""
+                        ]
+                    }
+                ]
+            }, 
+            "CreateVpcResources": {
+                "Fn::Equals": [
+                    {
+                        "Ref": "VpcId"
+                    }, 
+                    ""
+                ]
+            }, 
+            "UseSpecifiedVpcAvailabilityZones": {
+                "Fn::Not": [
+                    {
+                        "Fn::Equals": [
+                            {
+                                "Fn::Join": [
+                                    "", 
+                                    {
+                                        "Ref": "VpcAvailabilityZones"
+                                    }
+                                ]
+                            }, 
+                            ""
+                        ]
+                    }
+                ]
+            }, 
+            "CreateEC2LCWithKeyPair": {
+                "Fn::Not": [
+                    {
+                        "Fn::Equals": [
+                            {
+                                "Ref": "KeyName"
+                            }, 
+                            ""
+                        ]
+                    }
+                ]
+            }, 
+            "SetEndpointToECSAgent": {
+                "Fn::Not": [
+                    {
+                        "Fn::Equals": [
+                            {
+                                "Ref": "EcsEndpoint"
+                            }, 
+                            ""
+                        ]
+                    }
+                ]
+            }, 
+            "CreateEC2LCWithoutKeyPair": {
+                "Fn::Equals": [
+                    {
+                        "Ref": "KeyName"
+                    }, 
+                    ""
+                ]
+            }
+        }, 
+        "Resources": {
+            "PubSubnet1RouteTableAssociation": {
+                "Type": "AWS::EC2::SubnetRouteTableAssociation", 
+                "Properties": {
+                    "SubnetId": {
+                        "Ref": "PubSubnetAz1"
+                    }, 
+                    "RouteTableId": {
+                        "Ref": "RouteViaIgw"
+                    }
+                }, 
+                "Condition": "CreateVpcResources"
+            }, 
+            "EcsElasticLoadBalancerExistingVpc": {
+                "Type": "AWS::ElasticLoadBalancing::LoadBalancer", 
+                "Properties": {
+                    "Subnets": {
+                        "Ref": "ELBSubnetIds"
+                    }, 
+                    "Scheme": {
+                        "Ref" : "LoadBalancerScheme"
+                    },
+                    "Listeners": [
+                        {
+                            "InstancePort": {
+                                "Ref": "EcsPort"
+                            }, 
+                            "LoadBalancerPort": {
+                                "Ref": "ElbPort"
+                            }, 
+                            "Protocol": {
+                                "Ref": "ElbProtocol"
+                            }
+                        },
+                                                
+                        {
+                           "InstancePort": "9200", 
+                                "LoadBalancerPort": "9200", 
+                                "Protocol": "tcp"
+                        },
+                        {
+                            "InstancePort": "9300", 
+                            "LoadBalancerPort": "9300", 
+                            "Protocol": "tcp"
+                        }
+
+
+                    ], 
+                    "CrossZone": "true", 
+                    "SecurityGroups": [
+                        {
+                            "Ref": "ElbSecurityGroup"
+                        }
+                    ], 
+                    "HealthCheck": {
+                        "HealthyThreshold": "2", 
+                        "Interval": "30", 
+                        "Target": {
+                            "Ref": "ElbHealthCheckTarget"
+                        }, 
+                        "Timeout": "5", 
+                        "UnhealthyThreshold": "10"
+                    }
+                }, 
+                "Condition": "CreateELBForExistingVpc"
+            }, 
+            "EcsInstanceLc": {
+                "Type": "AWS::AutoScaling::LaunchConfiguration", 
+                "Properties": {
+                    "UserData": {
+                        "Fn::If": [
+                            "SetEndpointToECSAgent", 
+                            {
+                                "Fn::Base64": {
+                                    "Fn::Join": [
+                                        "", 
+                                        [
+                                            "#!/bin/bash\n", 
+                                            "echo ECS_CLUSTER=", 
+                                            {
+                                                "Ref": "EcsClusterName"
+                                            }, 
+                                            " >> /etc/ecs/ecs.config", 
+                                            "\necho ECS_BACKEND_HOST=", 
+                                            {
+                                                "Ref": "EcsEndpoint"
+                                            }, 
+                                            " >> /etc/ecs/ecs.config"
+                                        ]
+                                    ]
+                                }
+                            }, 
+                            {
+                                "Fn::Base64": {
+                                    "Fn::Join": [
+                                        "", 
+                                        [
+                                            "#!/bin/bash\n", 
+                                            "echo ECS_CLUSTER=", 
+                                            {
+                                                "Ref": "EcsClusterName"
+                                            }, 
+                                            " >> /etc/ecs/ecs.config"
+                                        ]
+                                    ]
+                                }
+                            }
+                        ]
+                    }, 
+                    "ImageId": {
+                        "Ref": "EcsAmiId"
+                    }, 
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    }, 
+                    "SecurityGroups": [
+                        {
+                            "Ref": "EcsSecurityGroup"
+                        }
+                    ], 
+                    "IamInstanceProfile": {
+                        "Ref": "IamRoleInstanceProfile"
+                    }, 
+                    "InstanceType": {
+                        "Ref": "EcsInstanceType"
+                    }, 
+                    "AssociatePublicIpAddress": false
+                }, 
+                "Condition": "CreateEC2LCWithKeyPair"
+            }, 
+            "EcsSecurityGroup": {
+                "Type": "AWS::EC2::SecurityGroup", 
+                "Properties": {
+                    "SecurityGroupIngress": {
+                        "Fn::If": [
+                            "CreateELB", 
+                            [
+                                {
+                                    "ToPort": {
+                                        "Ref": "EcsPort"
+                                    }, 
+                                    "IpProtocol": "tcp", 
+                                    "CidrIp": {
+                                        "Ref": "SourceCidr"
+                                    }, 
+                                    "FromPort": {
+                                        "Ref": "EcsPort"
+                                    }
+                                }, 
+                                {
+                                    "ToPort": "65535", 
+                                    "IpProtocol": "tcp", 
+                                    "SourceSecurityGroupId": {
+                                        "Ref": "ElbSecurityGroup"
+                                    }, 
+                                    "FromPort": "1"
+                                },
+                                {
+                                    "ToPort": "22", 
+                                    "IpProtocol": "tcp", 
+                                   "CidrIp": {
+                                        "Ref": "SourceCidr"
+                                    },
+                                    "FromPort": "22"
+                                },
+                                                                {
+                                "ToPort": "9200", 
+                                    "IpProtocol": "tcp", 
+                                   "CidrIp": {
+                                        "Ref": "SourceCidr"
+                                    },
+                                    "FromPort": "9200"
+                                },
+                                {
+                                    "ToPort": "9300", 
+                                    "IpProtocol": "tcp", 
+                                   "CidrIp": {
+                                        "Ref": "SourceCidr"
+                                    },
+                                    "FromPort": "9300"
+                                }
+                            ], 
+                            [
+                                {
+                                    "ToPort": {
+                                        "Ref": "EcsPort"
+                                    }, 
+                                    "IpProtocol": "tcp", 
+                                    "CidrIp": {
+                                        "Ref": "SourceCidr"
+                                    }, 
+                                    "FromPort": {
+                                        "Ref": "EcsPort"
+                                    }
+                                }
+                            ]
+                        ]
+                    }, 
+                    "VpcId": {
+                        "Fn::If": [
+                            "CreateVpcResources", 
+                            {
+                                "Ref": "Vpc"
+                            }, 
+                            {
+                                "Ref": "VpcId"
+                            }
+                        ]
+                    }, 
+                    "GroupDescription": "ECS Allowed Ports"
+                }
+            }, 
+            "EcsInstanceAsg": {
+                "Type": "AWS::AutoScaling::AutoScalingGroup", 
+                "Properties": {
+                    "DesiredCapacity": {
+                        "Ref": "AsgMaxSize"
+                    }, 
+                    "Tags": [
+                        {
+                            "PropagateAtLaunch": "true", 
+                            "Value": {
+                                "Fn::Join": [
+                                    "", 
+                                    [
+                                        "ECS Instance - ", 
+                                        {
+                                            "Ref": "AWS::StackName"
+                                        }
+                                    ]
+                                ]
+                            }, 
+                            "Key": "Name"
+                        }
+                    ], 
+                    "MinSize": "1", 
+                    "MaxSize": {
+                        "Ref": "AsgMaxSize"
+                    }, 
+                    "VPCZoneIdentifier": {
+                        "Fn::If": [
+                            "CreateVpcResources", 
+                            [
+                                {
+                                    "Fn::Join": [
+                                        ",", 
+                                        [
+                                            {
+                                                "Ref": "PubSubnetAz1"
+                                            }, 
+                                            {
+                                                "Ref": "PubSubnetAz2"
+                                            }
+                                        ]
+                                    ]
+                                }
+                            ], 
+                            {
+                                "Ref": "SubnetIds"
+                            }
+                        ]
+                    }, 
+                    "LaunchConfigurationName": {
+                        "Fn::If": [
+                            "CreateEC2LCWithKeyPair", 
+                            {
+                                "Ref": "EcsInstanceLc"
+                            }, 
+                            {
+                                "Ref": "EcsInstanceLcWithoutKeyPair"
+                            }
+                        ]
+                    }
+                }
+            }, 
+            "PubSubnetAz1": {
+                "Type": "AWS::EC2::Subnet", 
+                "Properties": {
+                    "VpcId": {
+                        "Ref": "Vpc"
+                    }, 
+                    "CidrBlock": {
+                        "Fn::FindInMap": [
+                            "VpcCidrs", 
+                            {
+                                "Ref": "AWS::Region"
+                            }, 
+                            "pubsubnet1"
+                        ]
+                    }, 
+                    "AvailabilityZone": {
+                        "Fn::If": [
+                            "UseSpecifiedVpcAvailabilityZones", 
+                            {
+                                "Fn::Select": [
+                                    "0", 
+                                    {
+                                        "Ref": "VpcAvailabilityZones"
+                                    }
+                                ]
+                            }, 
+                            {
+                                "Fn::Select": [
+                                    "0", 
+                                    {
+                                        "Fn::GetAZs": {
+                                            "Ref": "AWS::Region"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }, 
+                "Condition": "CreateVpcResources"
+            }, 
+            "PubSubnetAz2": {
+                "Type": "AWS::EC2::Subnet", 
+                "Properties": {
+                    "VpcId": {
+                        "Ref": "Vpc"
+                    }, 
+                    "CidrBlock": {
+                        "Fn::FindInMap": [
+                            "VpcCidrs", 
+                            {
+                                "Ref": "AWS::Region"
+                            }, 
+                            "pubsubnet2"
+                        ]
+                    }, 
+                    "AvailabilityZone": {
+                        "Fn::If": [
+                            "UseSpecifiedVpcAvailabilityZones", 
+                            {
+                                "Fn::Select": [
+                                    "1", 
+                                    {
+                                        "Ref": "VpcAvailabilityZones"
+                                    }
+                                ]
+                            }, 
+                            {
+                                "Fn::Select": [
+                                    "1", 
+                                    {
+                                        "Fn::GetAZs": {
+                                            "Ref": "AWS::Region"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }, 
+                "Condition": "CreateVpcResources"
+            }, 
+            "PublicRouteViaIgw": {
+                "Type": "AWS::EC2::Route", 
+                "Properties": {
+                    "GatewayId": {
+                        "Ref": "InternetGateway"
+                    }, 
+                    "DestinationCidrBlock": "0.0.0.0/0", 
+                    "RouteTableId": {
+                        "Ref": "RouteViaIgw"
+                    }
+                }, 
+                "Condition": "CreateVpcResources", 
+                "DependsOn": "AttachGateway"
+            }, 
+            "RouteViaIgw": {
+                "Type": "AWS::EC2::RouteTable", 
+                "Properties": {
+                    "VpcId": {
+                        "Ref": "Vpc"
+                    }
+                }, 
+                "Condition": "CreateVpcResources"
+            }, 
+            "ElbSecurityGroup": {
+                "Type": "AWS::EC2::SecurityGroup", 
+                "Properties": {
+                    "SecurityGroupIngress": [
+                               {
+                                "ToPort": "9200", 
+                                    "IpProtocol": "tcp", 
+                                   "CidrIp": {
+                                        "Ref": "SourceCidr"
+                                    },
+                                    "FromPort": "9200"
+                                },
+                                                               {
+                                "ToPort": "9300", 
+                                    "IpProtocol": "tcp", 
+                                   "CidrIp": {
+                                        "Ref": "SourceCidr"
+                                    },
+                                    "FromPort": "9300"
+                                },
+                                                               {
+                                "ToPort": "80", 
+                                    "IpProtocol": "tcp", 
+                                   "CidrIp": {
+                                        "Ref": "SourceCidr"
+                                    },
+                                    "FromPort": "80"
+                                }
+
+
+
+                    ], 
+                    "VpcId": {
+                        "Fn::If": [
+                            "CreateVpcResources", 
+                            {
+                                "Ref": "Vpc"
+                            }, 
+                            {
+                                "Ref": "VpcId"
+                            }
+                        ]
+                    }, 
+                    "GroupDescription": "ELB Allowed Ports"
+                }
+            }, 
+            "InternetGateway": {
+                "Type": "AWS::EC2::InternetGateway", 
+                "Condition": "CreateVpcResources"
+            }, 
+            "Vpc": {
+                "Type": "AWS::EC2::VPC", 
+                "Properties": {
+                    "EnableDnsSupport": "true", 
+                    "CidrBlock": {
+                        "Fn::FindInMap": [
+                            "VpcCidrs", 
+                            {
+                                "Ref": "AWS::Region"
+                            }, 
+                            "vpc"
+                        ]
+                    }, 
+                    "EnableDnsHostnames": "true"
+                }, 
+                "Condition": "CreateVpcResources"
+            }, 
+            "EcsInstanceLcWithoutKeyPair": {
+                "Type": "AWS::AutoScaling::LaunchConfiguration", 
+                "Properties": {
+                    "UserData": {
+                        "Fn::If": [
+                            "SetEndpointToECSAgent", 
+                            {
+                                "Fn::Base64": {
+                                    "Fn::Join": [
+                                        "", 
+                                        [
+                                            "#!/bin/bash\n", 
+                                            "echo ECS_CLUSTER=", 
+                                            {
+                                                "Ref": "EcsClusterName"
+                                            }, 
+                                            " >> /etc/ecs/ecs.config", 
+                                            "\necho ECS_BACKEND_HOST=", 
+                                            {
+                                                "Ref": "EcsEndpoint"
+                                            }, 
+                                            " >> /etc/ecs/ecs.config"
+                                        ]
+                                    ]
+                                }
+                            }, 
+                            {
+                                "Fn::Base64": {
+                                    "Fn::Join": [
+                                        "", 
+                                        [
+                                            "#!/bin/bash\n", 
+                                            "echo ECS_CLUSTER=", 
+                                            {
+                                                "Ref": "EcsClusterName"
+                                            }, 
+                                            " >> /etc/ecs/ecs.config"
+                                        ]
+                                    ]
+                                }
+                            }
+                        ]
+                    }, 
+                    "ImageId": {
+                        "Ref": "EcsAmiId"
+                    }, 
+                    "SecurityGroups": [
+                        {
+                            "Ref": "EcsSecurityGroup"
+                        }
+                    ], 
+                    "IamInstanceProfile": {
+                        "Ref": "IamRoleInstanceProfile"
+                    }, 
+                    "InstanceType": {
+                        "Ref": "EcsInstanceType"
+                    }, 
+                    "AssociatePublicIpAddress": true
+                }, 
+                "Condition": "CreateEC2LCWithoutKeyPair"
+            }, 
+            "EcsElasticLoadBalancer": {
+                "Type": "AWS::ElasticLoadBalancing::LoadBalancer", 
+                "Properties": {
+                    "Subnets": [
+                        {
+                            "Ref": "PubSubnetAz1"
+                        }, 
+                        {
+                            "Ref": "PubSubnetAz2"
+                        }
+                    ], 
+                    "Listeners": [
+                        {
+                            "InstancePort": {
+                                "Ref": "EcsPort"
+                            }, 
+                            "LoadBalancerPort": {
+                                "Ref": "ElbPort"
+                            }, 
+                            "Protocol": {
+                                "Ref": "ElbProtocol"
+                            }
+                        }
+                    ], 
+                    "CrossZone": "true", 
+                    "SecurityGroups": [
+                        {
+                            "Ref": "ElbSecurityGroup"
+                        }
+                    ], 
+                    "HealthCheck": {
+                        "HealthyThreshold": "2", 
+                        "Interval": "30", 
+                        "Target": {
+                            "Ref": "ElbHealthCheckTarget"
+                        }, 
+                        "Timeout": "5", 
+                        "UnhealthyThreshold": "10"
+                    }
+                }, 
+                "Condition": "CreateELBForNewVpc"
+            }, 
+            "PubSubnet2RouteTableAssociation": {
+                "Type": "AWS::EC2::SubnetRouteTableAssociation", 
+                "Properties": {
+                    "SubnetId": {
+                        "Ref": "PubSubnetAz2"
+                    }, 
+                    "RouteTableId": {
+                        "Ref": "RouteViaIgw"
+                    }
+                }, 
+                "Condition": "CreateVpcResources"
+            }, 
+            "AttachGateway": {
+                "Type": "AWS::EC2::VPCGatewayAttachment", 
+                "Properties": {
+                    "VpcId": {
+                        "Ref": "Vpc"
+                    }, 
+                    "InternetGatewayId": {
+                        "Ref": "InternetGateway"
+                    }
+                }, 
+                "Condition": "CreateVpcResources"
+            }
+        }, 
+        "Mappings": {
+            "VpcCidrs": {
+                "us-east-1": {
+                    "pubsubnet1": "10.0.0.0/24", 
+                    "vpc": "10.0.0.0/16", 
+                    "pubsubnet2": "10.0.1.0/24"
+                }, 
+                "ap-northeast-1": {
+                    "pubsubnet1": "10.0.0.0/24", 
+                    "vpc": "10.0.0.0/16", 
+                    "pubsubnet2": "10.0.1.0/24"
+                }, 
+                "eu-west-1": {
+                    "pubsubnet1": "10.0.0.0/24", 
+                    "vpc": "10.0.0.0/16", 
+                    "pubsubnet2": "10.0.1.0/24"
+                }, 
+                "ap-southeast-1": {
+                    "pubsubnet1": "10.0.0.0/24", 
+                    "vpc": "10.0.0.0/16", 
+                    "pubsubnet2": "10.0.1.0/24"
+                }, 
+                "ap-southeast-2": {
+                    "pubsubnet1": "10.0.0.0/24", 
+                    "vpc": "10.0.0.0/16", 
+                    "pubsubnet2": "10.0.1.0/24"
+                }, 
+                "us-west-2": {
+                    "pubsubnet1": "10.0.0.0/24", 
+                    "vpc": "10.0.0.0/16", 
+                    "pubsubnet2": "10.0.1.0/24"
+                }, 
+                "us-west-1": {
+                    "pubsubnet1": "10.0.0.0/24", 
+                    "vpc": "10.0.0.0/16", 
+                    "pubsubnet2": "10.0.1.0/24"
+                }, 
+                "eu-central-1": {
+                    "pubsubnet1": "10.0.0.0/24", 
+                    "vpc": "10.0.0.0/16", 
+                    "pubsubnet2": "10.0.1.0/24"
+                }, 
+                "sa-east-1": {
+                    "pubsubnet1": "10.0.0.0/24", 
+                    "vpc": "10.0.0.0/16", 
+                    "pubsubnet2": "10.0.1.0/24"
+                }
+            }
+        }
+
+}

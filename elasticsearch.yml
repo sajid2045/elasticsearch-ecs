@@ -1,0 +1,38 @@
+cluster:
+  name: ${CLUSTER_NAME}
+
+node:
+  master: ${NODE_MASTER}
+  data: ${NODE_DATA}
+
+path:
+  data: /usr/share/elasticsearch/data/data
+  logs: /usr/share/elasticsearch/data/log
+  plugins: /usr/share/elasticsearch/plugins
+  work: /usr/share/elasticsearch/data/work
+
+bootstrap.mlockall: true
+
+http.enabled: true
+
+cloud:
+  aws:
+    region: ${AWS_REGION}
+    protocol: http
+    access_key: ${AWS_KEY}
+    secret_key: ${AWS_SECRET}
+
+network:
+  publish_host: _ec2:privateIp_
+  bind_host: 0
+
+discovery:
+  type: ec2
+  ec2.groups: ${AWS_SECURITY_GROUP}
+  zen:
+    minimum_master_nodes: 3
+    ping.multicast.enabled: false
+    fd.ping_timeout: 30s
+    
+action.disable_delete_all_indices: true
+
